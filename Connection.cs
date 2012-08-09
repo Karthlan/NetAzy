@@ -10,32 +10,48 @@ namespace NetAzy
     public class Connection
     {
         private IPAddress ip;
+        private Socket socket;
+        private byte[] receiveBuffer;
 
-        private NetworkStream stream;
-        public NetworkStream Stream
-        {
-            get { return stream; }
-        }
-
-        private TcpClient client;
+        public IncomingNetMessage HalfMessage;
 
         public void Dispose()
         {
-            client.Close();
-            client = null;
-            stream = null;
+            socket.Close();
+            socket = null;
         }
 
         public bool Active
         {
-            get { return client.Connected; }
+            get { return socket.Connected; }
         }
 
-        public Connection(TcpClient client)
+        public int ReceiveBufferSize
         {
-            this.client = client;
-            ip = ((IPEndPoint)client.Client.RemoteEndPoint).Address;
-            stream = client.GetStream();
+            get { return socket.ReceiveBufferSize; }
+        }
+
+
+        public byte[] ReceiveBuffer
+        {
+            get { return receiveBuffer; }
+        }
+
+        public Socket Socket
+        {
+            get { return socket; }
+        }
+
+        public IPAddress IP
+        {
+            get { return ip; }
+        }
+
+        public Connection(Socket socket)
+        {
+            this.socket = socket;
+            ip = ((IPEndPoint)socket.RemoteEndPoint).Address;
+            receiveBuffer = new byte[ReceiveBufferSize];
         }
     }
 }

@@ -10,71 +10,108 @@ namespace NetAzy
 {
     public class NetServer
     {
-        private List<Connection> Connections;
+        protected List<Connection> connections;
 
-        protected TcpListener tcpListener;
+        public List<Connection> Connections
+        {
+            get { return connections; }
+        }
 
-        protected Thread thread;
+        protected Socket listener;
 
         public NetServer()
         {
-            this.Connections = new List<Connection>();
+            this.connections = new List<Connection>();
         }
 
-        private void HandleClientComm()
+        public delegate void OnMessageReceivedDel(IncomingNetMessage msg, Connection con);
+        public OnMessageReceivedDel OnMessageReceived;
+
+        public delegate void OnConnectionLostDel(Connection con);
+        public OnConnectionLostDel OnConnectionLost;
+
+        public void SendMessage(OutgoingNetMessage msg)
         {
-            while(true)
-            foreach (Connection con in Connections)
+            foreach(Connection con in connections)
+                con.Socket.BeginSend(msg.Bytes, 0, msg.Size, 0, new AsyncCallback(send), con);
+        }
+
+        public void SendMessage(OutgoingNetMessage msg, Connection con)
+        {
+            con.Socket.BeginSend(msg.Bytes, 0, msg.Size, 0, new AsyncCallback(send), con);
+        }
+
+        private void send(IAsyncResult ar)
+        {
+            Connection con = (Connection)ar.AsyncState;
+
+            int bytesSent = con.Socket.EndSend(ar);
+            Console.WriteLine(bytesSent);
+        }
+
+        private void readMessage(IAsyncResult ar)
+        {
+            try
             {
-                byte[] message = new byte[4096];
-                if (con.Active)
+                Connection con = (Connection)ar.AsyncState;
+                Socket handler = con.Socket;
+
+                // Read data from the client socket.
+                int read = handler.EndReceive(ar);
+
+                // Data was read from the client socket.
+                if (read > 0)
                 {
-                    int bytesRead = 0;
-                    try
+                    byte[] bytes = new byte[read];
+                    for (int i = 0; i < read; i++)
                     {
-                        bytesRead = con.Stream.Read(message, 0, 4096);
+                        bytes[i] = con.ReceiveBuffer[i];
                     }
-                    catch
-                    {
-                        break;
-                    }
-                    if (bytesRead != 0)
-                    {
-                        RcvNetMessage msg = new RcvNetMessage(message, bytesRead);
-                        Console.WriteLine(msg.ReadInt32());
-                    }
-                    else
-                    {
-                        break;
-                    }
+                    IncomingNetMessage msg = new IncomingNetMessage(bytes);
+                    if (OnMessageReceived != null)
+                        OnMessageReceived(msg, con);
+                    handler.BeginReceive(con.ReceiveBuffer, 0, con.ReceiveBufferSize, 0,
+                        new AsyncCallback(readMessage), con);
+                }
+            }
+            catch (SocketException e)
+            {
+                if (e.ErrorCode == 10054)
+                {
+                    Connection con = (Connection)ar.AsyncState;
+                    Console.WriteLine("Client disconnected: " + con.IP);
+                    if (OnConnectionLost != null)
+                        OnConnectionLost(con);
+                    connections.Remove(con);
+                    con.Dispose();
                 }
                 else
                 {
-                    con.Dispose();
-                    Connections.Remove(con);
+                    throw new Exception("Unkown Error: " + e);
                 }
             }
         }
 
-        private void ListenForClients()
+        private void acceptConnection(IAsyncResult result)
         {
-            this.tcpListener.Start();
-            Thread clientThread = new Thread(HandleClientComm);
-            clientThread.Start();
-            while (true)
-            {
-                Connection connection = new Connection(this.tcpListener.AcceptTcpClient());
-                Connections.Add(connection);
-                Thread.Sleep(1);
-            }
+            Socket s = listener.EndAccept(result);
+
+            Connection con = new Connection(s);
+
+            this.connections.Add(con);
+
+            s.BeginReceive(con.ReceiveBuffer, 0, con.ReceiveBufferSize, 0, new AsyncCallback(readMessage), con);
+            listener.BeginAccept(acceptConnection, null);
         }
 
         public void Start(string str_ip, int port)
         {
             IPAddress ip = Helper.ResolveAdress(str_ip);
-            this.tcpListener = new TcpListener(ip, port);
-            this.thread = new Thread(ListenForClients);
-            this.thread.Start();
+            this.listener = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            IPEndPoint localEP = new IPEndPoint(ip, port);
+            listener.Bind(localEP);
+            listener.Listen(10);
+            this.listener.BeginAccept(acceptConnection, null);
         }
     }
 }

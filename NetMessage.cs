@@ -5,53 +5,83 @@ using System.Text;
 
 namespace NetAzy
 {
-    public class RcvNetMessage
+    public class IncomingNetMessage
     {
-        private byte[] bytes;
-        private int messageLength;
-        private int index = 0;
+        protected byte[] bytes;
+        protected int index = 0;
 
-        public RcvNetMessage(byte[] bytes, int length)
+        public int Index
         {
-            this.bytes = bytes;
-            messageLength = length;
+            get { return index; }
         }
 
-        public int ReadInt32()
+        public int Lenght
         {
+            get { return bytes.Count(); }
+        }
+
+        public byte[] Bytes
+        {
+            get { return bytes; }
+        }
+
+        public IncomingNetMessage(byte[] bytes)
+        {
+            this.bytes = bytes;
+        }
+
+        #region Readers
+
+        protected void TestLenght()
+        {
+            if (index >= Lenght)
+                throw new Exception("Reached end of NetworkStream");
+        }
+
+        public Int32 ReadInt32()
+        {
+            TestLenght();
             Int32 Int = BitConverter.ToInt32(bytes, index);
+            index += 2;
+            return Int;
+
+        }
+
+        public Int16 ReadInt16()
+        {
+            TestLenght();
+            Int16 Int = BitConverter.ToInt16(bytes, index);
+            index += 2;
             return Int;
         }
 
         public string ReadString()
         {
-            int lenght = BitConverter.ToInt16(bytes, index - 2);
+            TestLenght();
+            int lenght = ReadInt16();
             string str = "";
-            index += 2;
-            for (int i = 0; i >= lenght; i++)
+            for (int i = 0; i < lenght; i++)
             {
                 str += BitConverter.ToChar(bytes, index);
-                index++;
+                index += 2;
             }
             return str;
         }
 
         public bool ReadBool()
         {
+            TestLenght();
             return false;
         }
+        #endregion
 
-        public short ReadShort()
-        {
-            return 0;
-        }
     }
 
-    public class SndNetMessage
+    public class OutgoingNetMessage
     {
         protected List<byte> bytes = new List<byte>();
 
-        public int Lenght
+        public int Size
         {
             get { return bytes.Count; }
         }
@@ -66,6 +96,29 @@ namespace NetAzy
             byte[] intBytes = BitConverter.GetBytes(number);
             foreach (byte b in intBytes)
                 bytes.Add(b);
+        }
+
+        public void WriteInt16(Int16 number)
+        {
+            byte[] intBytes = BitConverter.GetBytes(number);
+            foreach (byte b in intBytes)
+                bytes.Add(b);
+        }
+
+        public void WriteChar(char c)
+        {
+            byte[] charBytes = BitConverter.GetBytes(c);
+            foreach (byte b in charBytes)
+                bytes.Add(b);
+        }
+
+        public void WriteString(string str)
+        {
+            char[] chars = str.ToCharArray();
+
+            WriteInt16((Int16)str.Count());
+            foreach (char c in chars)
+                WriteChar(c);
         }
     }
 }

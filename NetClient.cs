@@ -9,38 +9,76 @@ namespace NetAzy
 {
     public class NetClient
     {
-        private TcpClient tcpClient;
-        private NetworkStream stream;
+        private Socket socket;
+        private byte[] receiveBuffer;
 
-        public NetClient()
-        {
-            tcpClient = new TcpClient();
-        }
+        public delegate void OnMessageReceivedDel(IncomingNetMessage msg);
+        public OnMessageReceivedDel OnMessageReceived;
 
         public bool Connect(string str_ip, int port)
         {
             IPAddress ip = Helper.ResolveAdress(str_ip);
-            IPEndPoint serverEndPoint = new IPEndPoint(ip, port);
+            socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-            tcpClient.Connect(serverEndPoint);
+            socket.Connect(ip, port);
+            receiveBuffer = new byte[socket.ReceiveBufferSize];
 
-            stream = tcpClient.GetStream();
+            socket.BeginReceive(receiveBuffer, 0, socket.ReceiveBufferSize, 0, new AsyncCallback(readMessage), null);
 
             return true;
         }
 
-        public bool SendMessage(SndNetMessage msg)
+        private void readMessage(IAsyncResult ar)
         {
             try
             {
-                stream.Write(msg.Bytes, 0, msg.Lenght);
-                stream.Flush();
+                // Read data from the client socket.
+                int read = socket.EndReceive(ar);
+
+                // Data was read from the client socket.
+                if (read > 0)
+                {
+                    byte[] bytes = new byte[read];
+                    for (int i = 0; i < read; i++)
+                    {
+                        bytes[i] = receiveBuffer[i];
+                    }
+                    IncomingNetMessage msg = new IncomingNetMessage(bytes);
+                    if (OnMessageReceived != null)
+                        OnMessageReceived(msg);
+                    socket.BeginReceive(receiveBuffer, 0, socket.ReceiveBufferSize, 0,
+                        new AsyncCallback(readMessage), null);
+                }
+            }
+            catch (SocketException e)
+            {
+                if (e.ErrorCode == 10054)
+                {
+                    Console.WriteLine("Server shutdown");
+                }
+                else
+                {
+                    throw new Exception("Unkown Error: " + e);
+                }
+            }
+        }
+
+        public bool SendMessage(OutgoingNetMessage msg)
+        {
+            try
+            {
+                socket.BeginSend(msg.Bytes, 0, msg.Size, 0, new AsyncCallback(messageSent), null);
                 return true;
             }
-            catch
+            catch(Exception)
             {
                 return false;
             }
+        }
+
+        private void messageSent(IAsyncResult ar)
+        {
+            socket.EndSend(ar);
         }
     }
 }
